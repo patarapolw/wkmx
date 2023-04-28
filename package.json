@@ -10,8 +10,10 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "decompress-response": "^8.1.0",
     "mongodb": "^5.3.0",
-    "nodejieba": "^2.6.0"
+    "nodejieba": "^2.6.0",
+    "ofetch": "^1.0.1"
   },
   "devDependencies": {
     "@types/node": "^16",

@@ -73,11 +73,26 @@ class DbMongo {
         updated: Date;
       }>("meta"),
       cedict: this.db.zh.collection<{
+        key: string;
         traditional?: string;
         simplified: string;
-        pinyin: string[];
+        pinyin: string;
         gloss: string;
       }>("cedict"),
+    },
+  };
+
+  func = {
+    zh: {
+      cedict: {
+        makeKey: (o: {
+          traditional?: string;
+          simplified: string;
+          pinyin: string;
+        }) => {
+          return `${o.pinyin} ${o.simplified} ${o.traditional || ""}`;
+        },
+      },
     },
   };
 
@@ -132,6 +147,7 @@ class DbMongo {
       })(this.col.zh.meta),
       ...((col) => {
         return [
+          col.createIndex({ key: 1 }),
           col.createIndex({ traditional: 1 }),
           col.createIndex({ simplified: 1 }),
           col.createIndex(

@@ -1,36 +1,48 @@
-import { db } from "../server/db/index.js";
+import decompressResponse from "decompress-response";
 import https from "node:https";
+
+import { db } from "../server/db/index.js";
 
 // import Module from "node:module";
 // const require = Module.createRequire(import.meta.url);
 
 function fetchGzip(url: string, cb: (r: string) => void) {
-  import("decompress-response").then(({ default: decompressResponse }) => {
-    https.get(url, (resp) => {
+  https
+    .get(url, (resp) => {
+      resp.headers["content-encoding"] = "gzip";
+
       let s = "";
       const r = decompressResponse(resp);
+
+      const push = (t: string) => {
+        const ss = (s + t).split("\n");
+        s = ss.pop() || s;
+        ss.map((t) => {
+          if (t) cb(t.trimEnd());
+        });
+      };
+
       r.once("error", () => {
         cb("");
       });
-      r.on("data", (c) => {
-        const [s1, s2] = (s + c.toString()).split("\n");
-        if (s2) {
-          cb(s1);
-          s = s2;
-        } else {
-          s = s1;
-        }
+      r.on("data", (c: Buffer) => {
+        push(c.toString("utf-8"));
       });
       r.once("end", () => {
-        cb(s.trimEnd());
+        push(s);
+        cb("");
       });
+    })
+    .on("error", () => {
+      cb("");
     });
-  });
 }
 
-db.connect().then(async (db) => {
+db.runAndClose(async (db) => {
   const checkCedict = async () => {
-    const meta = await db.col.zh.meta.findOne({ _id: "cedict" });
+    const META_ID = "cedict";
+
+    const meta = await db.col.zh.meta.findOne({ _id: META_ID });
     if (meta) {
       const threshold = new Date();
       threshold.setDate(threshold.getDate() - 7);
@@ -39,7 +51,7 @@ db.connect().then(async (db) => {
 
     const items: any[] = [];
     let updated: Date | null = null;
-    const re = new RegExp("^(.+?) (.+?) \\[(.+?)\\] (.+)$");
+    const re = new RegExp("^(.+?) (.+?) \\[(.+?)\\] /(.+)/$");
 
     await new Promise((resolve) => {
       fetchGzip(
@@ -60,10 +72,12 @@ db.connect().then(async (db) => {
           const m = re.exec(s);
           if (m) {
             let [, traditional, simplified, pinyin, gloss] = m;
-            const it = { simplified, pinyin, gloss };
+            const it: any = { simplified, pinyin };
+            it.gloss = gloss.replaceAll("/", "\n");
             if (traditional !== simplified) {
               Object.assign(it, { traditional });
             }
+            it.key = db.func.zh.cedict.makeKey(it);
             items.push(it);
           }
         },
@@ -81,11 +95,32 @@ db.connect().then(async (db) => {
 
         await db.col.zh.cedict.deleteMany(
           {
-            key: { $in: items.map((it) => db.func.zh.cedict.makeKey(it)) },
+            key: { $in: items.map((it) => it.key) },
           },
           { session },
         );
-        await db.col.zh.cedict.insertMany(items, { ordered: false, session });
+
+        const batchSize = 10000;
+        for (let i = 0; i < items.length; i += batchSize) {
+          await db.col.zh.cedict.insertMany(items.slice(i, i + batchSize), {
+            ordered: false,
+            session,
+          });
+          console.log(i);
+        }
+
+        if (meta) {
+          await db.col.zh.meta.updateOne(
+            { _id: META_ID },
+            { updated },
+            { session },
+          );
+        } else {
+          await db.col.zh.meta.insertOne(
+            { _id: META_ID, updated },
+            { session },
+          );
+        }
 
         await session.commitTransaction();
       } catch (e) {
@@ -99,4 +134,9 @@ db.connect().then(async (db) => {
   await checkCedict();
 
   const checkTatoeba = async () => {};
+}).then(() => {
+  console.log("Done");
+  setTimeout(() => {
+    process.exit(0);
+  }, 5000);
 });

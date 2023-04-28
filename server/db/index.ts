@@ -1,4 +1,4 @@
-import { MongoClient, ServerApiVersion } from "mongodb";
+import { MongoClient, ServerApiVersion } from 'mongodb';
 
 class DbMongo {
   mongo = new MongoClient(process.env["MONGO_URI"]!, {
@@ -162,6 +162,16 @@ class DbMongo {
     ]);
 
     return this;
+  }
+
+  async disconnect() {
+    return this.mongo.close();
+  }
+
+  async runAndClose(fn: (db: this) => Promise<void>) {
+    await this.connect();
+    await fn(this);
+    await this.disconnect();
   }
 }
 

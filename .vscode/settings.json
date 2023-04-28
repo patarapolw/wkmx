@@ -22,6 +22,7 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true
   },
+  "importSorter.generalConfiguration.sortOnBeforeSave": true,
   "vetur.validation.template": false,
   "vetur.validation.script": false,
   "vetur.validation.style": false,

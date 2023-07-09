@@ -42,7 +42,9 @@ db.runAndClose(async (db) => {
   const checkCedict = async () => {
     const META_ID = "cedict";
 
-    const meta = await db.col.zh.meta.findOne({ _id: META_ID });
+    const cols = db.db.dict.col();
+
+    const meta = await cols.meta.findOne({ _id: META_ID });
     if (meta) {
       const threshold = new Date();
       threshold.setDate(threshold.getDate() - 7);
@@ -77,7 +79,7 @@ db.runAndClose(async (db) => {
             if (traditional !== simplified) {
               Object.assign(it, { traditional });
             }
-            it.key = db.func.zh.cedict.makeKey(it);
+            it.key = db.db.dict.fn.cedict.makeKey(it);
             items.push(it);
           }
         },
@@ -93,7 +95,7 @@ db.runAndClose(async (db) => {
           readPreference: "primary",
         });
 
-        await db.col.zh.cedict.deleteMany(
+        await cols.cedict.deleteMany(
           {
             key: { $in: items.map((it) => it.key) },
           },
@@ -102,7 +104,7 @@ db.runAndClose(async (db) => {
 
         const batchSize = 10000;
         for (let i = 0; i < items.length; i += batchSize) {
-          await db.col.zh.cedict.insertMany(items.slice(i, i + batchSize), {
+          await cols.cedict.insertMany(items.slice(i, i + batchSize), {
             ordered: false,
             session,
           });
@@ -110,16 +112,9 @@ db.runAndClose(async (db) => {
         }
 
         if (meta) {
-          await db.col.zh.meta.updateOne(
-            { _id: META_ID },
-            { updated },
-            { session },
-          );
+          await cols.meta.updateOne({ _id: META_ID }, { updated }, { session });
         } else {
-          await db.col.zh.meta.insertOne(
-            { _id: META_ID, updated },
-            { session },
-          );
+          await cols.meta.insertOne({ _id: META_ID, updated }, { session });
         }
 
         await session.commitTransaction();

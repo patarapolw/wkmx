@@ -1,4 +1,6 @@
-import { MongoClient, ServerApiVersion } from 'mongodb';
+import { MongoClient, ServerApiVersion } from "mongodb";
+
+type ID = string;
 
 class DbMongo {
   mongo = new MongoClient(process.env["MONGO_URI"]!, {
@@ -10,87 +12,160 @@ class DbMongo {
   });
 
   db = {
-    user: this.mongo.db("user"),
-    data: this.mongo.db("data"),
-    zh: this.mongo.db("zh"),
-  };
-
-  col = {
     user: {
-      user: this.db.user.collection<{
-        _id: string; // WaniKani user ID
-        username: string;
-        level: string;
-        settings: {
-          vocabPerHanzi: number;
-          ignoreWanikaniLevel: boolean;
+      db: this.mongo.db("user"),
+      col(init?: () => void) {
+        const cols = {
+          user: this.db.collection<{
+            _id: ID; // WaniKani user ID
+            username: string;
+            passwordHash: string;
+            wanikani?: {
+              apiKeyHash: string;
+              level: string;
+              vocabPerHanzi: number;
+              ignoreLevel?: boolean;
+            };
+            settings?: {
+              vocabPerHanzi?: number;
+            };
+          }>("user"),
+          item: this.db.collection<{
+            ID: ID; // unique (ID, user)
+            userID: ID;
+            type: string;
+            item: string[];
+            reading: string[];
+            meaning: string[];
+            quiz: {
+              srs: number;
+              nextReview: Date;
+            } | null;
+          }>("item"),
+          sentence: this.db.collection<{
+            ID: ID; // unique (ID, user)
+            user: string;
+            sentence: string;
+            itemIDs: ID[]; // ref item.ID
+            translation: string;
+          }>("sentence"),
         };
-      }>("user"),
-      item: this.db.user.collection<{
-        user: string;
-        itemId: string;
-        type: string;
-        item: string[];
-        reading: string[];
-        meaning: string[];
-        quiz: {
-          srs: number;
-          nextReview: Date;
-        } | null;
-      }>("item"),
-      sentence: this.db.user.collection<{
-        user: string;
-        itemId: string;
-        sentence: string;
-        vocabularies: string[];
-        translation: string;
-      }>("sentence"),
-    },
-    data: {
-      meta: this.db.data.collection<{
-        _id: string;
-        updated: Date;
-      }>("meta"),
-      character: this.db.data.collection<{
-        sub: string[];
-        sup: string[];
-        var: string[];
-        entry: string;
-      }>("character"),
-      sentence: this.db.data.collection<{
-        tatoebaId: number;
-        lang: "cmn" | "jpn" | "eng";
-        translationIds: number[];
-        text: string;
-        fulltext?: string;
-        vocabularies?: string[];
-        tags: string[];
-      }>("sentence"),
-    },
-    zh: {
-      meta: this.db.zh.collection<{
-        _id: string;
-        updated: Date;
-      }>("meta"),
-      cedict: this.db.zh.collection<{
-        key: string;
-        traditional?: string;
-        simplified: string;
-        pinyin: string;
-        gloss: string;
-      }>("cedict"),
-    },
-  };
 
-  func = {
-    zh: {
-      cedict: {
-        makeKey: (o: {
-          traditional?: string;
-          simplified: string;
-          pinyin: string;
-        }) => {
-          return `${o.pinyin} ${o.simplified} ${o.traditional || ""}`;
+        if (init) {
+          Promise.allSettled([
+            ...((col) => {
+              return [
+                col.createIndex({ username: 1 }, { unique: true }),
+                col.createIndex({ passwordHash: 1 }),
+                col.createIndex({ "wanikani.apiKeyHash": 1 }),
+              ];
+            })(cols.user),
+            ...((col) => {
+              return [
+                col.createIndex({ ID: 1, userID: 1 }, { unique: true }),
+                col.createIndex({ item: 1 }),
+                col.createIndex({ reading: 1 }),
+                col.createIndex({ meaning: 1 }),
+                col.createIndex({ "quiz.srs": 1 }),
+                col.createIndex({ "quiz.nextReview": 1 }),
+              ];
+            })(cols.item),
+            ...((col) => {
+              return [
+                col.createIndex({ ID: 1, userID: 1 }, { unique: true }),
+                col.createIndex({ sentence: 1 }),
+                col.createIndex({ itemIDs: 1 }),
+                col.createIndex({ translation: "text" }),
+              ];
+            })(cols.sentence),
+          ]);
+        }
+
+        return cols;
+      },
+    },
+    dict: {
+      db: this.mongo.db("dict"),
+      col(init?: () => void) {
+        const cols = {
+          meta: this.db.collection<{
+            _id: ID;
+            updated: Date;
+          }>("meta"),
+          radical: this.db.collection<{
+            entry: string; // unique
+            sub: string[];
+            sup: string[];
+            var: string[];
+          }>("radical"),
+          sentence: this.db.collection<{
+            _id: ID; // tateobaID, unique
+            lang: "cmn" | "jpn" | "eng";
+            translationIDs: ID[];
+            text: string;
+            fulltext?: string;
+            vocabularies?: string[];
+            tags: string[];
+          }>("sentence"),
+          cedict: this.db.collection<{
+            key: string; // not necessarily unique
+            traditional?: string;
+            simplified: string;
+            pinyin: string;
+            english: string[];
+          }>("cedict"),
+        };
+
+        if (init) {
+          Promise.allSettled([
+            ...((col) => {
+              return [col.createIndex({ updated: 1 })];
+            })(cols.meta),
+            ...((col) => {
+              return [
+                col.createIndex({ entry: 1 }, { unique: true }),
+                col.createIndex({ sub: 1 }),
+                col.createIndex({ sup: 1 }),
+                col.createIndex({ var: 1 }),
+              ];
+            })(cols.radical),
+            ...((col) => {
+              return [
+                col.createIndex({ lang: 1 }),
+                col.createIndex({ translationIDs: 1 }),
+                col.createIndex({ fulltext: "text" }),
+                col.createIndex({ vocabularies: 1 }),
+                col.createIndex({ tags: 1 }),
+              ];
+            })(cols.sentence),
+            ...((col) => {
+              return [
+                col.createIndex({ key: 1 }),
+                col.createIndex({ traditional: 1 }),
+                col.createIndex({ simplified: 1 }),
+                col.createIndex(
+                  { pinyin: 1 },
+                  {
+                    collation: { locale: "simple", strength: 1 },
+                  },
+                ),
+                col.createIndex({ english: "text" }),
+              ];
+            })(cols.cedict),
+          ]).finally(init);
+        }
+
+        return cols;
+      },
+      fn: {
+        cedict: {
+          makeKey: (o: {
+            traditional?: string;
+            simplified: string;
+            pinyin: string;
+          }) => {
+            return `${o.pinyin} ${o.simplified} ${o.traditional || ""}`;
+          },
         },
       },
     },
@@ -100,65 +175,12 @@ class DbMongo {
     await this.mongo.connect();
 
     await Promise.allSettled([
-      ...((col) => {
-        return [col.createIndex({ username: 1 }, { unique: true })];
-      })(this.col.user.user),
-      ...((col) => {
-        return [
-          col.createIndex({ user: 1, itemId: 1 }, { unique: true }),
-          col.createIndex({ item: 1 }),
-          col.createIndex({ reading: 1 }),
-          col.createIndex({ meaning: 1 }),
-          col.createIndex({ "quiz.srs": 1 }),
-          col.createIndex({ "quiz.nextReview": 1 }),
-        ];
-      })(this.col.user.item),
-      ...((col) => {
-        return [
-          col.createIndex({ user: 1, itemId: 1 }, { unique: true }),
-          col.createIndex({ sentence: 1 }),
-          col.createIndex({ vocabularies: 1 }),
-          col.createIndex({ translation: "text" }),
-        ];
-      })(this.col.user.sentence),
-      ...((col) => {
-        return [col.createIndex({ updated: 1 })];
-      })(this.col.data.meta),
-      ...((col) => {
-        return [
-          col.createIndex({ sub: 1 }),
-          col.createIndex({ sup: 1 }),
-          col.createIndex({ var: 1 }),
-          col.createIndex({ entry: 1 }, { unique: true }),
-        ];
-      })(this.col.data.character),
-      ...((col) => {
-        return [
-          col.createIndex({ tatoebaId: 1 }, { unique: true }),
-          col.createIndex({ lang: 1 }),
-          col.createIndex({ translationIds: 1 }),
-          col.createIndex({ fulltext: "text" }),
-          col.createIndex({ vocabularies: 1 }),
-          col.createIndex({ tags: 1 }),
-        ];
-      })(this.col.data.sentence),
-      ...((col) => {
-        return [col.createIndex({ updated: 1 })];
-      })(this.col.zh.meta),
-      ...((col) => {
-        return [
-          col.createIndex({ key: 1 }),
-          col.createIndex({ traditional: 1 }),
-          col.createIndex({ simplified: 1 }),
-          col.createIndex(
-            { pinyin: 1 },
-            {
-              collation: { locale: "simple", strength: 1 },
-            },
-          ),
-          col.createIndex({ gloss: "text" }),
-        ];
-      })(this.col.zh.cedict),
+      new Promise<void>((resolve) => {
+        this.db.user.col(resolve);
+      }),
+      new Promise<void>((resolve) => {
+        this.db.dict.col(resolve);
+      }),
     ]);
 
     return this;

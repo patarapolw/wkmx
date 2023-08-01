@@ -87,42 +87,22 @@ db.runAndClose(async (db) => {
     });
 
     if (updated && items.length) {
-      const session = db.mongo.startSession();
-      try {
-        session.startTransaction({
-          readConcern: { level: "snapshot" },
-          writeConcern: { w: "majority" },
-          readPreference: "primary",
+      await cols.cedict.deleteMany({
+        key: { $in: items.map((it) => it.key) },
+      });
+
+      const batchSize = 10000;
+      for (let i = 0; i < items.length; i += batchSize) {
+        await cols.cedict.insertMany(items.slice(i, i + batchSize), {
+          ordered: false,
         });
+        console.log(i);
+      }
 
-        await cols.cedict.deleteMany(
-          {
-            key: { $in: items.map((it) => it.key) },
-          },
-          { session },
-        );
-
-        const batchSize = 10000;
-        for (let i = 0; i < items.length; i += batchSize) {
-          await cols.cedict.insertMany(items.slice(i, i + batchSize), {
-            ordered: false,
-            session,
-          });
-          console.log(i);
-        }
-
-        if (meta) {
-          await cols.meta.updateOne({ _id: META_ID }, { updated }, { session });
-        } else {
-          await cols.meta.insertOne({ _id: META_ID, updated }, { session });
-        }
-
-        await session.commitTransaction();
-      } catch (e) {
-        console.error(e);
-        await session.abortTransaction();
-      } finally {
-        await session.endSession();
+      if (meta) {
+        await cols.meta.updateOne({ _id: META_ID }, { updated });
+      } else {
+        await cols.meta.insertOne({ _id: META_ID, updated });
       }
     }
   };

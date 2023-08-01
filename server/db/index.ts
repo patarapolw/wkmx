@@ -78,7 +78,7 @@ class DbMongo {
                 col.createIndex({ translation: "text" }),
               ];
             })(cols.sentence),
-          ]);
+          ]).finally(init);
         }
 
         return cols;

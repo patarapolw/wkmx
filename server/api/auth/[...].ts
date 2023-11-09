@@ -27,5 +27,5 @@ export default NuxtAuthHandler({
     }),
   ],
   // A secret string you define, to ensure correct encryption - required in production
-  secret: process.env.AUTH_SECRET || "1232",
+  secret: process.env.AUTH_SECRET,
 });

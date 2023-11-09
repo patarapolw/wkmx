@@ -16,6 +16,8 @@
         "ts-node/register",
         "-r",
         "dotenv/config",
+        "--loader",
+        "ts-node/esm"
       ],
       "cwd": "${workspaceRoot}",
       "protocol": "inspector",

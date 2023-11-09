@@ -27,7 +27,6 @@ export class Tatoeba {
       );
 
       CREATE VIRTUAL TABLE IF NOT EXISTS sentence USING fts5 (
-        id,
         lang,
         full UNINDEXED,
         word
@@ -36,7 +35,7 @@ export class Tatoeba {
   }
 
   async download() {
-    await this.getLinks();
+    // await this.getLinks();
     await this.getSentences("eng");
     await this.getSentences("cmn");
     await this.getSentences("jpn");
@@ -128,26 +127,26 @@ export class Tatoeba {
 
     try {
       process.chdir(this.dir);
-      const zipFile = joinPath(`${lang}.tsv.bz2`);
-      await new Promise((resolve, reject) => {
-        https
-          .get(
-            `https://downloads.tatoeba.org/exports/per_language/${lang}/${lang}_sentences.tsv.bz2`,
-            (resp) => {
-              const fileStream = createWriteStream(zipFile);
-              resp.pipe(fileStream);
-              fileStream.once("error", reject).once("finish", () => {
-                fileStream.close();
-                resolve(null);
-              });
-            },
-          )
-          .once("error", reject);
-      });
+      // const zipFile = joinPath(`${lang}.tsv.bz2`);
+      // await new Promise((resolve, reject) => {
+      //   https
+      //     .get(
+      //       `https://downloads.tatoeba.org/exports/per_language/${lang}/${lang}_sentences.tsv.bz2`,
+      //       (resp) => {
+      //         const fileStream = createWriteStream(zipFile);
+      //         resp.pipe(fileStream);
+      //         fileStream.once("error", reject).once("finish", () => {
+      //           fileStream.close();
+      //           resolve(null);
+      //         });
+      //       },
+      //     )
+      //     .once("error", reject);
+      // });
 
-      await new Promise((r, s) =>
-        SevenZip.unpack(zipFile, (e) => (e ? s(e) : r(null))),
-      );
+      // await new Promise((r, s) =>
+      //   SevenZip.unpack(zipFile, (e) => (e ? s(e) : r(null))),
+      // );
 
       const textFile = `${lang}.tsv`;
       const fileStream = createReadStream(textFile, "utf-8");
@@ -160,7 +159,7 @@ export class Tatoeba {
         const stack: any[] = [];
         const stackBatch = 1000;
         const stmt = this.sql.prepare(/* sql */ `
-          INSERT INTO sentence (id, lang, full, word) VALUES (@id, @lang, @full, @word);
+          INSERT INTO sentence (rowid, lang, full, word) VALUES (@id, @lang, @full, @word);
         `);
         const commitStack = this.sql.transaction((ss: any[]) => {
           ss.map((s) => stmt.run(s));
@@ -175,10 +174,12 @@ export class Tatoeba {
           let word = full;
           switch (lang) {
             case "cmn":
-              word = jieba.cutForSearch(full).join(" ");
+              word = jieba.cutForSearch(full.replace(/\p{P}/gu, "")).join(" ");
               break;
             case "jpn":
-              word = wakachigaki.tokenize(full).join(" ");
+              word = wakachigaki
+                .tokenize(full.replace(/\p{P}/gu, ""))
+                .join(" ");
               break;
           }
 
@@ -199,10 +200,12 @@ export class Tatoeba {
 
         fileStream
           .once("error", reject)
-          .once("end", resolve)
+          .once("end", () => {
+            commitStack(stack);
+            resolve(null);
+          })
           .on("data", (c) => {
             push(c.toString());
-            commitStack(stack);
           });
       });
     } finally {
@@ -213,5 +216,5 @@ export class Tatoeba {
 
 (async function main() {
   const t = new Tatoeba(".tmp");
-  await t.getSentences("eng");
+  await t.download();
 })();
